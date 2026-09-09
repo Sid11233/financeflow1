@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { LogOut, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { NotificationBell } from '@/features/notifications/components/NotificationBell';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 
@@ -22,6 +23,14 @@ export function AppLayout() {
   const { profile, user, signOut } = useAuth();
   const location = useLocation();
   const [isNavOpen, setIsNavOpen] = useState(false);
+  // NotificationBell owns a realtime subscription — mounting it in both the
+  // mobile top bar and the sidebar header at once (visually hidden via CSS
+  // doesn't stop it from mounting) makes two subscribers open the same
+  // channel and crashes the second `.on()` call, since Supabase's realtime
+  // client reuses an already-subscribed channel instance for a repeated
+  // topic name. Only ever mount one, matching whichever the `lg` CSS
+  // breakpoint would actually show.
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   useEffect(() => {
     setIsNavOpen(false);
@@ -32,14 +41,7 @@ export function AppLayout() {
       <div className="flex items-center justify-between px-4 py-5">
         <span className="text-lg font-semibold text-neutral-900">FinanceFlow</span>
         <div className="flex items-center gap-1">
-          {/* Below lg, the bell already lives in the always-visible mobile
-              top bar — showing it here too would mount a second
-              NotificationBell (a second realtime subscription) for no
-              reason, since this drawer and that bar are never both the
-              only way to reach it at the same viewport width. */}
-          <div className="hidden lg:block">
-            <NotificationBell />
-          </div>
+          {isDesktop && <NotificationBell />}
           <button
             type="button"
             onClick={() => setIsNavOpen(false)}
@@ -111,7 +113,7 @@ export function AppLayout() {
           <Menu className="h-5 w-5" aria-hidden="true" />
         </button>
         <span className="text-base font-semibold text-neutral-900">FinanceFlow</span>
-        <NotificationBell />
+        {!isDesktop && <NotificationBell />}
       </div>
 
       {isNavOpen && (
