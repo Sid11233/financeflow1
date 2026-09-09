@@ -19,6 +19,11 @@ export function updatePassword(password: string) {
   return supabase.auth.updateUser({ password });
 }
 
+export async function deleteAccount() {
+  const { error } = await supabase.functions.invoke('delete-account');
+  if (error) throw new Error(await extractFunctionErrorMessage(error));
+}
+
 // Edge Functions return { error: string } as their JSON body on failure.
 // supabase-js surfaces a non-2xx response as a FunctionsHttpError whose
 // `.context` is the raw Response — this unwraps our own error shape from

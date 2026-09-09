@@ -8,6 +8,7 @@ import { useInvites } from '../hooks/useInvites';
 import { useInviteMember } from '../hooks/useInviteMember';
 import { useRevokeInvite } from '../hooks/useRevokeInvite';
 import { useRemoveMember } from '../hooks/useRemoveMember';
+import { DeleteAccountDialog } from './DeleteAccountDialog';
 import {
   Badge,
   Button,
@@ -46,6 +47,7 @@ export function TeamSettingsPage() {
 
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [emailWarning, setEmailWarning] = useState<string | null>(null);
+  const [isDeleteAccountOpen, setIsDeleteAccountOpen] = useState(false);
 
   const {
     register,
@@ -186,6 +188,23 @@ export function TeamSettingsPage() {
         </CardContent>
       </Card>
 
+      {isOwner && (
+        <Card className="border-red-200">
+          <CardHeader>
+            <CardTitle className="text-red-700">Danger zone</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between gap-4">
+            <p className="text-sm text-neutral-600">
+              Permanently delete your organization and all of its data — clients, requests, documents, and
+              access for every team member. This cannot be undone.
+            </p>
+            <Button variant="destructive" onClick={() => setIsDeleteAccountOpen(true)}>
+              Delete my account
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <Dialog open={isInviteOpen} onClose={() => setIsInviteOpen(false)}>
         <DialogHeader>
           <DialogTitle>Invite a team member</DialogTitle>
@@ -205,6 +224,8 @@ export function TeamSettingsPage() {
           </DialogFooter>
         </form>
       </Dialog>
+
+      <DeleteAccountDialog open={isDeleteAccountOpen} onClose={() => setIsDeleteAccountOpen(false)} />
     </div>
   );
 }
