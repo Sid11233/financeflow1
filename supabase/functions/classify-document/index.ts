@@ -27,7 +27,10 @@ const DEFAULT_SETTINGS = {
   auto_accept_confidence: 0.8,
   reassign_confidence: 0.8,
   pdf_page_limit: 5,
-  model_name: 'claude-sonnet-4-6',
+  // "-latest" always points at Google's current recommended Flash model,
+  // rather than pinning a dated snapshot that Google eventually retires
+  // out from under this default.
+  model_name: 'gemini-flash-latest',
 };
 
 // claim_classification_job's row type — declared explicitly because .rpc()
@@ -55,9 +58,9 @@ Deno.serve(withObservability('classify-document', async (req, { log, correlation
   // off" mode, not classification erroring out. Jobs still get claimed and
   // marked done either way, so nothing piles up waiting for a key that may
   // never arrive.
-  const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY') ?? null;
-  if (!anthropicApiKey) {
-    log.info('anthropic_api_key_missing_manual_review_mode');
+  const geminiApiKey = Deno.env.get('GEMINI_API_KEY') ?? null;
+  if (!geminiApiKey) {
+    log.info('gemini_api_key_missing_manual_review_mode');
   }
 
   const supabaseAdmin = createClient(
@@ -69,7 +72,7 @@ Deno.serve(withObservability('classify-document', async (req, { log, correlation
   const jobId = typeof body?.jobId === 'string' ? body.jobId : null;
 
   if (jobId) {
-    const outcome = await processJob(supabaseAdmin, jobId, anthropicApiKey, log);
+    const outcome = await processJob(supabaseAdmin, jobId, geminiApiKey, log);
     return jsonResponse({ processed: outcome ? 1 : 0 }, 200, { 'X-Request-Id': requestId });
   }
 
@@ -84,7 +87,7 @@ Deno.serve(withObservability('classify-document', async (req, { log, correlation
 
   let processedCount = 0;
   for (const id of dueJobIds ?? []) {
-    const outcome = await processJob(supabaseAdmin, id as string, anthropicApiKey, log);
+    const outcome = await processJob(supabaseAdmin, id as string, geminiApiKey, log);
     if (outcome) processedCount += 1;
   }
 
@@ -99,7 +102,7 @@ Deno.serve(withObservability('classify-document', async (req, { log, correlation
 async function processJob(
   supabaseAdmin: SupabaseClient,
   jobId: string,
-  anthropicApiKey: string | null,
+  geminiApiKey: string | null,
   log: Logger,
 ): Promise<boolean> {
   const { data: job, error: claimError } = (await supabaseAdmin
@@ -112,8 +115,8 @@ async function processJob(
   }
 
   try {
-    if (anthropicApiKey) {
-      await runClassification(supabaseAdmin, job, anthropicApiKey, log);
+    if (geminiApiKey) {
+      await runClassification(supabaseAdmin, job, geminiApiKey, log);
     } else {
       await markForManualReview(supabaseAdmin, job, log);
     }
@@ -225,7 +228,7 @@ async function alertClassificationFailed(
 async function runClassification(
   supabaseAdmin: SupabaseClient,
   job: ClassificationJob,
-  anthropicApiKey: string,
+  geminiApiKey: string,
   log: Logger,
 ): Promise<void> {
   const { data: document, error: documentError } = await supabaseAdmin
@@ -263,7 +266,7 @@ async function runClassification(
     MAX_PDF_BYTES_BEFORE_RASTERIZE,
   );
 
-  const result = await classifyDocument(anthropicApiKey, settings.model_name, source);
+  const result = await classifyDocument(geminiApiKey, settings.model_name, source);
 
   if (!result.classification) {
     await supabaseAdmin
@@ -320,7 +323,7 @@ async function runClassification(
 }
 
 // The "classification is off" path (see the top-level handler's comment
-// on anthropicApiKey being null): skips the AI call entirely and routes
+// on geminiApiKey being null): skips the AI call entirely and routes
 // straight to the review queue. Deliberately leaves ai_classification /
 // ai_confidence untouched (null) — analytics_classification_outcomes
 // (0041) already scopes "AI accuracy" to documents the AI actually

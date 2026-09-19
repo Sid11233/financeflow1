@@ -37,7 +37,7 @@ rendered content, which isn't stored once sent.
 a client's payment details, tax ID, or bank account numbers as structured
 data — if a client uploads a bank statement, its *content* is only ever
 what the classification step reads to identify *what kind* of document it
-is (see the Anthropic section below), not extracted and stored as
+is (see the Gemini section below), not extracted and stored as
 structured financial data anywhere.
 
 ## Where it's stored
@@ -99,7 +99,7 @@ data, and doesn't use it for advertising.
 ## Encryption
 
 - **In transit:** every connection — browser to app, app to database, app
-  to Storage, app to Anthropic/Resend — is TLS-encrypted. There is no
+  to Storage, app to Gemini/Resend — is TLS-encrypted. There is no
   unencrypted path anywhere in the system.
 - **At rest:** the database and Storage (where uploaded files live) are
   both encrypted at rest using Supabase's underlying AES-256 disk
@@ -134,7 +134,7 @@ as part of running the product. There are four:
 | Subprocessor | What it does | What it sees |
 |---|---|---|
 | **Supabase** | Database, file storage, authentication, and the serverless functions that run the app's backend logic | Everything — it's the platform FinanceFlow is built on |
-| **Anthropic** | Classifies each uploaded document (what type of document it is) using the Claude API | The content of each uploaded document, sent solely to produce a classification. Per Anthropic's standard commercial API terms, API inputs are not used to train their models — a firm should confirm the current terms directly with Anthropic (or ask us for our Data Processing Agreement with them) if this needs to be relied on contractually |
+| **Google (Gemini API, free tier)** | Classifies each uploaded document (what type of document it is) using the Gemini API | The content of each uploaded document, sent solely to produce a classification. **This currently runs on Gemini's free tier, not a paid/commercial API plan** — under Google's free-tier terms, submitted content may be used by Google "to provide, improve, and develop Google products and services and machine learning technologies," and human reviewers may read and annotate it. This is a materially weaker guarantee than a paid API plan's terms (which exclude prompts/responses from training) and than what a Business Associate/Data Processing Agreement would provide. A firm with clients whose documents shouldn't be used this way should ask FinanceFlow to move classification to a paid Gemini plan before relying on this feature for real client data |
 | **Resend** | Sends every email the app sends — client-facing requests and reminders, and the firm's own account emails (password reset, invites) | Recipient email addresses and the content of emails sent to them |
 | **Vercel** | Hosts and serves the frontend application's static code via CDN | Does not process client data — sees only ordinary web traffic metadata (IP addresses, requested paths) as any CDN would |
 

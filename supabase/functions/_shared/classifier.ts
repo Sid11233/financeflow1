@@ -64,9 +64,8 @@ name.`;
 const STRICT_REMINDER =
   '\n\nIMPORTANT: Your previous response could not be parsed as valid JSON matching the schema. Respond with ONLY the raw JSON object — no prose, no markdown code fences, nothing before or after it.';
 
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
-const ANTHROPIC_VERSION = '2023-06-01';
-const MAX_TOKENS = 1024;
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const MAX_OUTPUT_TOKENS = 1024;
 
 export interface ClassificationSource {
   pdfBytes?: Uint8Array;
@@ -84,9 +83,9 @@ export async function classifyDocument(
   model: string,
   source: ClassificationSource,
 ): Promise<ClassificationCallResult> {
-  const contentBlocks = buildContentBlocks(source);
+  const parts = buildParts(source);
 
-  const firstResponseText = await callAnthropic(apiKey, model, contentBlocks, CLASSIFICATION_SYSTEM_PROMPT);
+  const firstResponseText = await callGemini(apiKey, model, parts, CLASSIFICATION_SYSTEM_PROMPT);
   const firstParsed = tryParseClassification(firstResponseText);
 
   if (firstParsed) {
@@ -97,10 +96,10 @@ export async function classifyDocument(
   // single-turn call rather than a multi-turn "that wasn't right, retry"
   // conversation, since the goal is just a better-formatted answer, not a
   // discussion.
-  const secondResponseText = await callAnthropic(
+  const secondResponseText = await callGemini(
     apiKey,
     model,
-    contentBlocks,
+    parts,
     `${CLASSIFICATION_SYSTEM_PROMPT}${STRICT_REMINDER}`,
   );
   const secondParsed = tryParseClassification(secondResponseText);
@@ -112,57 +111,59 @@ export async function classifyDocument(
   };
 }
 
-function buildContentBlocks(source: ClassificationSource): unknown[] {
-  const blocks: unknown[] = [];
+function buildParts(source: ClassificationSource): unknown[] {
+  const parts: unknown[] = [];
 
   if (source.pdfBytes) {
-    blocks.push({
-      type: 'document',
-      source: { type: 'base64', media_type: 'application/pdf', data: encodeBase64(source.pdfBytes) },
+    parts.push({
+      inline_data: { mime_type: 'application/pdf', data: encodeBase64(source.pdfBytes) },
     });
   }
 
   for (const image of source.images ?? []) {
-    blocks.push({
-      type: 'image',
-      source: { type: 'base64', media_type: image.mimeType, data: encodeBase64(image.bytes) },
+    parts.push({
+      inline_data: { mime_type: image.mimeType, data: encodeBase64(image.bytes) },
     });
   }
 
-  blocks.push({ type: 'text', text: 'Classify this document.' });
-  return blocks;
+  parts.push({ text: 'Classify this document.' });
+  return parts;
 }
 
-async function callAnthropic(
+async function callGemini(
   apiKey: string,
   model: string,
-  contentBlocks: unknown[],
+  parts: unknown[],
   systemPrompt: string,
 ): Promise<string> {
-  const response = await fetch(ANTHROPIC_API_URL, {
+  const response = await fetch(`${GEMINI_API_BASE}/${model}:generateContent`, {
     method: 'POST',
     headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': ANTHROPIC_VERSION,
+      'x-goog-api-key': apiKey,
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model,
-      max_tokens: MAX_TOKENS,
-      temperature: 0,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: contentBlocks }],
+      contents: [{ role: 'user', parts }],
+      systemInstruction: { parts: { text: systemPrompt } },
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        response_mime_type: 'application/json',
+      },
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Anthropic API error ${response.status}: ${errorText}`);
+    throw new Error(`Gemini API error ${response.status}: ${errorText}`);
   }
 
   const data = await response.json();
-  const textBlock = (data.content ?? []).find((block: { type: string }) => block.type === 'text');
-  return textBlock?.text ?? '';
+  // Missing on a safety-filtered or otherwise empty response — falls
+  // through to tryParseClassification failing on '', which the caller
+  // already treats as a normal retry-then-unparseable case, same as a
+  // response with no usable text ever did.
+  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 }
 
 function tryParseClassification(rawText: string): Classification | null {

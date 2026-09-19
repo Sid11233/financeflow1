@@ -34,7 +34,7 @@ Edge Functions need their own secrets locally, read from
 
 ```bash
 cat > supabase/functions/.env <<'EOF'
-ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=...
 RESEND_API_KEY=re_...
 EMAIL_FROM=notifications@mail.financeflow.app
 APP_ORIGIN=http://localhost:5173
@@ -77,7 +77,7 @@ npx supabase link --project-ref <project-ref>
 
 | Secret | Notes |
 |---|---|
-| `ANTHROPIC_API_KEY` | See `docs/runbook.md` for rotation |
+| `GEMINI_API_KEY` | See `docs/runbook.md` for rotation |
 | `RESEND_API_KEY` | Different key per environment — never reuse production's in staging |
 | `EMAIL_FROM` | e.g. `notifications@mail.financeflow.app` |
 | `APP_ORIGIN` | That environment's real frontend URL, no trailing slash |

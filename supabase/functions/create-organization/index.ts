@@ -88,7 +88,7 @@ Deno.serve(withObservability('create-organization', async (req, { log, correlati
 
   // No-ops (returns valid: true) when TURNSTILE_SECRET_KEY isn't
   // configured — CAPTCHA is opt-in infrastructure, same pattern as
-  // ANTHROPIC_API_KEY/SENTRY_DSN elsewhere in this app; nothing breaks
+  // GEMINI_API_KEY/SENTRY_DSN elsewhere in this app; nothing breaks
   // signup before a site is actually set up in Cloudflare.
   const turnstileResult = await verifyTurnstileToken(turnstileToken, ip);
   if (!turnstileResult.valid) {

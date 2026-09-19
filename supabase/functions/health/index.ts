@@ -2,7 +2,7 @@
 // docs/uptime-monitoring.md for the monitor configuration and alerting
 // setup). Checks the three things that can fail independently of each
 // other and would otherwise only surface as a confusing downstream error:
-// the database, Storage, and the Anthropic API classification depends on.
+// the database, Storage, and the Gemini API classification depends on.
 //
 // Every check has its own timeout so one hanging upstream can't hang the
 // whole health check past what a monitor's own timeout would tolerate —
@@ -63,8 +63,8 @@ async function checkStorage(supabaseAdmin: ReturnType<typeof createClient>): Pro
   });
 }
 
-async function checkAnthropic(): Promise<CheckResult> {
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
+async function checkGemini(): Promise<CheckResult> {
+  const apiKey = Deno.env.get('GEMINI_API_KEY');
   if (!apiKey) {
     return { status: 'not_configured', latencyMs: 0 };
   }
@@ -72,12 +72,12 @@ async function checkAnthropic(): Promise<CheckResult> {
   return timedCheck(async () => {
     // A models list is metadata-only — no generation cost, no tokens
     // consumed — while still exercising both network reachability and key
-    // validity (a bad key comes back 401, not a network failure).
-    const response = await fetch('https://api.anthropic.com/v1/models', {
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    // validity (a bad key comes back 400/403, not a network failure).
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+      headers: { 'x-goog-api-key': apiKey },
     });
     if (!response.ok) {
-      throw new Error(`Anthropic API responded ${response.status}`);
+      throw new Error(`Gemini API responded ${response.status}`);
     }
   });
 }
@@ -87,13 +87,13 @@ Deno.serve(withObservability('health', async (req, { log, correlationId }) => {
 
   const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
-  const [database, storage, anthropic] = await Promise.all([
+  const [database, storage, gemini] = await Promise.all([
     checkDatabase(supabaseAdmin),
     checkStorage(supabaseAdmin),
-    checkAnthropic(),
+    checkGemini(),
   ]);
 
-  const checks = { database, storage, anthropic };
+  const checks = { database, storage, gemini };
   const anyDown = Object.values(checks).some((check) => check.status === 'down');
   const overallStatus = anyDown ? 'down' : 'ok';
 
@@ -101,7 +101,7 @@ Deno.serve(withObservability('health', async (req, { log, correlationId }) => {
     log.error('health_check_failed', {
       database: database.status,
       storage: storage.status,
-      anthropic: anthropic.status,
+      gemini: gemini.status,
     });
   }
 

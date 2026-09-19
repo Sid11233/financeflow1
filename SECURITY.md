@@ -60,7 +60,7 @@ user to scope a request to — a scheduled sweep, a webhook, an admin
 operation like creating an account. Every user-facing action runs under
 that user's own session and RLS.
 
-**Dependencies and secrets.** Third-party API keys (Anthropic, Resend)
+**Dependencies and secrets.** Third-party API keys (Gemini, Resend)
 live only in Supabase's server-side secrets store, never in code or in
 anything shipped to the browser. See `docs/runbook.md` for the key
 rotation procedure. Dependency vulnerabilities are tracked via `npm
@@ -73,7 +73,7 @@ and every Edge Function, with a PII scrubber (see
 strips client email addresses and document filenames before an event ever
 leaves the process — an error report can tell us something broke without
 telling us whose document it was. An external uptime monitor independently
-checks database, storage, and Anthropic reachability every 5 minutes (see
+checks database, storage, and Gemini reachability every 5 minutes (see
 `docs/uptime-monitoring.md`).
 
 **Deletion on request.** A client or firm can request their data be
