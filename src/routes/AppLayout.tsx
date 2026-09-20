@@ -39,7 +39,7 @@ export function AppLayout() {
   const sidebarContent = (
     <>
       <div className="flex items-center justify-between px-4 py-5">
-        <span className="text-lg font-semibold text-neutral-900">FinanceFlow</span>
+        <span className="text-lg font-serif font-semibold text-neutral-900">Finly</span>
         <div className="flex items-center gap-1">
           {isDesktop && <NotificationBell />}
           <button
@@ -112,7 +112,7 @@ export function AppLayout() {
         >
           <Menu className="h-5 w-5" aria-hidden="true" />
         </button>
-        <span className="text-base font-semibold text-neutral-900">FinanceFlow</span>
+        <span className="text-base font-serif font-semibold text-neutral-900">Finly</span>
         {!isDesktop && <NotificationBell />}
       </div>
 

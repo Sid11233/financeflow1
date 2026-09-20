@@ -6,10 +6,20 @@
   /* Accent colour, expressed as "R G B" channels so Tailwind's
      rgb(var(--color-accent) / <alpha-value>) syntax can apply opacity
      modifiers (e.g. bg-accent/10). Swap this single value to rebrand. */
-  --color-accent: 37 99 235; /* blue-600 */
+  --color-accent: 0 77 36; /* Finly forest green, matching the landing page's primary CTA */
   --color-accent-foreground: 255 255 255;
 }
 
 body {
-  @apply bg-neutral-50 text-neutral-900 antialiased;
+  @apply bg-neutral-50 font-sans text-neutral-900 antialiased;
+}
+
+/* Every h1 in this app is a page-level title (see the shared "text-xl
+   font-semibold" convention across page headers) — never a compact
+   in-card label, which uses CardTitle's <h3> instead — so a blanket rule
+   here safely gives every page title the same serif treatment the
+   landing page uses for its display headlines, with no risk of it
+   leaking into smaller UI chrome. */
+h1 {
+  @apply font-serif;
 }

@@ -29,7 +29,7 @@ export function UnsubscribePage() {
             <>
               <h1 className="text-lg font-semibold text-neutral-900">You're unsubscribed</h1>
               <p className="text-sm text-neutral-500">
-                You won't receive the FinanceFlow email digest anymore. You can turn it back on anytime from
+                You won't receive the Finly email digest anymore. You can turn it back on anytime from
                 Settings.
               </p>
             </>

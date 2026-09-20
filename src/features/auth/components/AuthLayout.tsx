@@ -6,7 +6,7 @@ export function AuthLayout({ title, children }: { title: string; children: React
     <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>{title}</CardTitle>
+          <CardTitle className="font-serif text-2xl font-medium">{title}</CardTitle>
         </CardHeader>
         <CardContent>{children}</CardContent>
       </Card>

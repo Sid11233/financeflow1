@@ -28,7 +28,7 @@ export function LoginPage() {
   };
 
   return (
-    <AuthLayout title="Sign in to FinanceFlow">
+    <AuthLayout title="Sign in to Finly">
       <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
         <Field label="Email" htmlFor="email" error={errors.email?.message}>
           <Input id="email" type="email" autoComplete="email" {...register('email')} />

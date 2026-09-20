@@ -54,7 +54,7 @@ export function SignupPage() {
   }
 
   return (
-    <AuthLayout title="Create your FinanceFlow account">
+    <AuthLayout title="Create your Finly account">
       <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
         <Field label="Firm name" htmlFor="firmName" error={errors.firmName?.message}>
           <Input id="firmName" autoComplete="organization" {...register('firmName')} />
