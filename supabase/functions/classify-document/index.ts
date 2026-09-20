@@ -19,7 +19,13 @@ import type { ReconciliationOutcome } from '../_shared/reconciliation.ts';
 import { withObservability } from '../_shared/sentry.ts';
 
 const BUCKET = 'client-documents';
-const MAX_PDF_BYTES_BEFORE_RASTERIZE = 4 * 1024 * 1024;
+// Always rasterize — 0 makes trimAndMaybeRasterizePdf's "small enough to
+// send as-is" check always fail (see pdfProcessing.ts). OpenRouter's free
+// vision models are a heterogeneous pool of many different providers, and
+// native PDF support (a "file" content block) is far less consistently
+// implemented across them than plain images, which every vision model
+// handles the same way.
+const MAX_PDF_BYTES_BEFORE_RASTERIZE = 0;
 const MAX_ATTEMPTS = 3;
 const SWEEP_BATCH_LIMIT = 20;
 
@@ -27,10 +33,11 @@ const DEFAULT_SETTINGS = {
   auto_accept_confidence: 0.8,
   reassign_confidence: 0.8,
   pdf_page_limit: 5,
-  // "-latest" always points at Google's current recommended Flash model,
-  // rather than pinning a dated snapshot that Google eventually retires
-  // out from under this default.
-  model_name: 'gemini-flash-latest',
+  // Confirmed working directly against OpenRouter before picking it — a
+  // free vision model on a shared upstream pool, so occasional 429s are
+  // expected; the existing attempts/backoff below already retries those,
+  // same as any other transient classification failure.
+  model_name: 'nex-agi/nex-n2.5-pro:free',
 };
 
 // claim_classification_job's row type — declared explicitly because .rpc()
@@ -58,9 +65,9 @@ Deno.serve(withObservability('classify-document', async (req, { log, correlation
   // off" mode, not classification erroring out. Jobs still get claimed and
   // marked done either way, so nothing piles up waiting for a key that may
   // never arrive.
-  const geminiApiKey = Deno.env.get('GEMINI_API_KEY') ?? null;
-  if (!geminiApiKey) {
-    log.info('gemini_api_key_missing_manual_review_mode');
+  const openRouterApiKey = Deno.env.get('OPENROUTER_API_KEY') ?? null;
+  if (!openRouterApiKey) {
+    log.info('openrouter_api_key_missing_manual_review_mode');
   }
 
   const supabaseAdmin = createClient(
@@ -72,7 +79,7 @@ Deno.serve(withObservability('classify-document', async (req, { log, correlation
   const jobId = typeof body?.jobId === 'string' ? body.jobId : null;
 
   if (jobId) {
-    const outcome = await processJob(supabaseAdmin, jobId, geminiApiKey, log);
+    const outcome = await processJob(supabaseAdmin, jobId, openRouterApiKey, log);
     return jsonResponse({ processed: outcome ? 1 : 0 }, 200, { 'X-Request-Id': requestId });
   }
 
@@ -87,7 +94,7 @@ Deno.serve(withObservability('classify-document', async (req, { log, correlation
 
   let processedCount = 0;
   for (const id of dueJobIds ?? []) {
-    const outcome = await processJob(supabaseAdmin, id as string, geminiApiKey, log);
+    const outcome = await processJob(supabaseAdmin, id as string, openRouterApiKey, log);
     if (outcome) processedCount += 1;
   }
 
@@ -102,7 +109,7 @@ Deno.serve(withObservability('classify-document', async (req, { log, correlation
 async function processJob(
   supabaseAdmin: SupabaseClient,
   jobId: string,
-  geminiApiKey: string | null,
+  openRouterApiKey: string | null,
   log: Logger,
 ): Promise<boolean> {
   const { data: job, error: claimError } = (await supabaseAdmin
@@ -115,8 +122,8 @@ async function processJob(
   }
 
   try {
-    if (geminiApiKey) {
-      await runClassification(supabaseAdmin, job, geminiApiKey, log);
+    if (openRouterApiKey) {
+      await runClassification(supabaseAdmin, job, openRouterApiKey, log);
     } else {
       await markForManualReview(supabaseAdmin, job, log);
     }
@@ -228,7 +235,7 @@ async function alertClassificationFailed(
 async function runClassification(
   supabaseAdmin: SupabaseClient,
   job: ClassificationJob,
-  geminiApiKey: string,
+  openRouterApiKey: string,
   log: Logger,
 ): Promise<void> {
   const { data: document, error: documentError } = await supabaseAdmin
@@ -266,7 +273,7 @@ async function runClassification(
     MAX_PDF_BYTES_BEFORE_RASTERIZE,
   );
 
-  const result = await classifyDocument(geminiApiKey, settings.model_name, source);
+  const result = await classifyDocument(openRouterApiKey, settings.model_name, source);
 
   if (!result.classification) {
     await supabaseAdmin
@@ -323,7 +330,7 @@ async function runClassification(
 }
 
 // The "classification is off" path (see the top-level handler's comment
-// on geminiApiKey being null): skips the AI call entirely and routes
+// on openRouterApiKey being null): skips the AI call entirely and routes
 // straight to the review queue. Deliberately leaves ai_classification /
 // ai_confidence untouched (null) — analytics_classification_outcomes
 // (0041) already scopes "AI accuracy" to documents the AI actually

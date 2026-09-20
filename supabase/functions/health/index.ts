@@ -2,7 +2,7 @@
 // docs/uptime-monitoring.md for the monitor configuration and alerting
 // setup). Checks the three things that can fail independently of each
 // other and would otherwise only surface as a confusing downstream error:
-// the database, Storage, and the Gemini API classification depends on.
+// the database, Storage, and the OpenRouter API classification depends on.
 //
 // Every check has its own timeout so one hanging upstream can't hang the
 // whole health check past what a monitor's own timeout would tolerate —
@@ -63,21 +63,26 @@ async function checkStorage(supabaseAdmin: ReturnType<typeof createClient>): Pro
   });
 }
 
-async function checkGemini(): Promise<CheckResult> {
-  const apiKey = Deno.env.get('GEMINI_API_KEY');
+async function checkOpenRouter(): Promise<CheckResult> {
+  const apiKey = Deno.env.get('OPENROUTER_API_KEY');
   if (!apiKey) {
     return { status: 'not_configured', latencyMs: 0 };
   }
 
   return timedCheck(async () => {
-    // A models list is metadata-only — no generation cost, no tokens
-    // consumed — while still exercising both network reachability and key
-    // validity (a bad key comes back 400/403, not a network failure).
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
-      headers: { 'x-goog-api-key': apiKey },
+    // Key/usage lookup is metadata-only — no generation cost, no tokens
+    // consumed, no upstream-provider availability involved — while still
+    // exercising both network reachability and key validity (a bad key
+    // comes back 401, not a network failure). Deliberately does not call
+    // chat/completions: that would depend on whichever free model happens
+    // to be available on OpenRouter's shared pool right now, which is a
+    // model-availability concern, not the account-level health this check
+    // is for.
+    const response = await fetch('https://openrouter.ai/api/v1/key', {
+      headers: { Authorization: `Bearer ${apiKey}` },
     });
     if (!response.ok) {
-      throw new Error(`Gemini API responded ${response.status}`);
+      throw new Error(`OpenRouter API responded ${response.status}`);
     }
   });
 }
@@ -87,13 +92,13 @@ Deno.serve(withObservability('health', async (req, { log, correlationId }) => {
 
   const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
-  const [database, storage, gemini] = await Promise.all([
+  const [database, storage, openrouter] = await Promise.all([
     checkDatabase(supabaseAdmin),
     checkStorage(supabaseAdmin),
-    checkGemini(),
+    checkOpenRouter(),
   ]);
 
-  const checks = { database, storage, gemini };
+  const checks = { database, storage, openrouter };
   const anyDown = Object.values(checks).some((check) => check.status === 'down');
   const overallStatus = anyDown ? 'down' : 'ok';
 
@@ -101,7 +106,7 @@ Deno.serve(withObservability('health', async (req, { log, correlationId }) => {
     log.error('health_check_failed', {
       database: database.status,
       storage: storage.status,
-      gemini: gemini.status,
+      openrouter: openrouter.status,
     });
   }
 

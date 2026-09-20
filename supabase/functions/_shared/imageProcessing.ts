@@ -31,11 +31,12 @@ export async function prepareImageForClassification(
     // jimp doesn't decode HEIC (no HEIC plugin in its default build) — a
     // genuine HEIC file can still reach here from a browser that could
     // preview it itself (Safari), since the upload page only converts HEIC
-    // when the uploading browser *can't* decode it. Gemini documents native
-    // HEIC/HEIF support, so passing the original bytes through unresized
-    // still has a real shot at working rather than being an accepted gap —
-    // just without this function's own downscaling, which isn't worth a
-    // second image-decoding dependency for how narrow this case is.
+    // when the uploading browser *can't* decode it. Whether the configured
+    // OpenRouter model handles HEIC varies by whichever underlying provider
+    // is actually serving it, and isn't worth verifying per-model — this
+    // case will likely come back "unreadable" or low-confidence rather than
+    // failing outright, an accepted gap given how narrow it is, rather than
+    // adding a second image-decoding dependency for it.
     return { bytes, mimeType };
   }
 }

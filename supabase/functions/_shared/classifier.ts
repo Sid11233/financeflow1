@@ -64,7 +64,7 @@ name.`;
 const STRICT_REMINDER =
   '\n\nIMPORTANT: Your previous response could not be parsed as valid JSON matching the schema. Respond with ONLY the raw JSON object — no prose, no markdown code fences, nothing before or after it.';
 
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MAX_OUTPUT_TOKENS = 1024;
 
 export interface ClassificationSource {
@@ -83,9 +83,9 @@ export async function classifyDocument(
   model: string,
   source: ClassificationSource,
 ): Promise<ClassificationCallResult> {
-  const parts = buildParts(source);
+  const userContent = buildUserContent(source);
 
-  const firstResponseText = await callGemini(apiKey, model, parts, CLASSIFICATION_SYSTEM_PROMPT);
+  const firstResponseText = await callOpenRouter(apiKey, model, userContent, CLASSIFICATION_SYSTEM_PROMPT);
   const firstParsed = tryParseClassification(firstResponseText);
 
   if (firstParsed) {
@@ -96,10 +96,10 @@ export async function classifyDocument(
   // single-turn call rather than a multi-turn "that wasn't right, retry"
   // conversation, since the goal is just a better-formatted answer, not a
   // discussion.
-  const secondResponseText = await callGemini(
+  const secondResponseText = await callOpenRouter(
     apiKey,
     model,
-    parts,
+    userContent,
     `${CLASSIFICATION_SYSTEM_PROMPT}${STRICT_REMINDER}`,
   );
   const secondParsed = tryParseClassification(secondResponseText);
@@ -111,59 +111,72 @@ export async function classifyDocument(
   };
 }
 
-function buildParts(source: ClassificationSource): unknown[] {
-  const parts: unknown[] = [];
+// PDFs always arrive here as rasterized images, never as pdfBytes — see
+// classify-document's MAX_PDF_BYTES_BEFORE_RASTERIZE=0 — since OpenRouter's
+// free-tier vision models are a heterogeneous pool of many different
+// providers, and native PDF handling (a "file" content block) is far less
+// consistently supported across them than plain images are. The pdfBytes
+// branch below is a defensive fallback, not a path this app's own callers
+// currently exercise.
+function buildUserContent(source: ClassificationSource): unknown[] {
+  const content: unknown[] = [];
 
   if (source.pdfBytes) {
-    parts.push({
-      inline_data: { mime_type: 'application/pdf', data: encodeBase64(source.pdfBytes) },
+    content.push({
+      type: 'file',
+      file: {
+        filename: 'document.pdf',
+        file_data: `data:application/pdf;base64,${encodeBase64(source.pdfBytes)}`,
+      },
     });
   }
 
   for (const image of source.images ?? []) {
-    parts.push({
-      inline_data: { mime_type: image.mimeType, data: encodeBase64(image.bytes) },
+    content.push({
+      type: 'image_url',
+      image_url: { url: `data:${image.mimeType};base64,${encodeBase64(image.bytes)}` },
     });
   }
 
-  parts.push({ text: 'Classify this document.' });
-  return parts;
+  content.push({ type: 'text', text: 'Classify this document.' });
+  return content;
 }
 
-async function callGemini(
+async function callOpenRouter(
   apiKey: string,
   model: string,
-  parts: unknown[],
+  userContent: unknown[],
   systemPrompt: string,
 ): Promise<string> {
-  const response = await fetch(`${GEMINI_API_BASE}/${model}:generateContent`, {
+  const response = await fetch(OPENROUTER_API_URL, {
     method: 'POST',
     headers: {
-      'x-goog-api-key': apiKey,
+      Authorization: `Bearer ${apiKey}`,
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      contents: [{ role: 'user', parts }],
-      systemInstruction: { parts: { text: systemPrompt } },
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-        response_mime_type: 'application/json',
-      },
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0,
+      max_tokens: MAX_OUTPUT_TOKENS,
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Gemini API error ${response.status}: ${errorText}`);
+    throw new Error(`OpenRouter API error ${response.status}: ${errorText}`);
   }
 
   const data = await response.json();
-  // Missing on a safety-filtered or otherwise empty response — falls
-  // through to tryParseClassification failing on '', which the caller
-  // already treats as a normal retry-then-unparseable case, same as a
-  // response with no usable text ever did.
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  // Missing on a refused/empty completion — falls through to
+  // tryParseClassification failing on '', which the caller already treats
+  // as a normal retry-then-unparseable case, same as a response with no
+  // usable text ever did.
+  return data.choices?.[0]?.message?.content ?? '';
 }
 
 function tryParseClassification(rawText: string): Classification | null {

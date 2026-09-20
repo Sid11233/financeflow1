@@ -11,7 +11,7 @@
 // not an approximation of it.
 //
 // Usage:
-//   GEMINI_API_KEY=... deno run --allow-read --allow-net --allow-env \
+//   OPENROUTER_API_KEY=... deno run --allow-read --allow-net --allow-env \
 //     supabase/functions/_test-harness/classify-samples.ts ./samples
 //
 // Expects ./samples/manifest.json:
@@ -24,7 +24,7 @@
 import { prepareClassificationSource } from '../_shared/prepareSource.ts';
 import { classifyDocument } from '../_shared/classifier.ts';
 
-const DEFAULT_MODEL = 'gemini-flash-latest';
+const DEFAULT_MODEL = 'nex-agi/nex-n2.5-pro:free';
 const DEFAULT_PDF_PAGE_LIMIT = 5;
 const DEFAULT_MAX_PDF_BYTES = 4 * 1024 * 1024;
 
@@ -47,11 +47,11 @@ interface ResultRow {
 
 async function main() {
   const folder = Deno.args[0] ?? './samples';
-  const apiKey = Deno.env.get('GEMINI_API_KEY');
+  const apiKey = Deno.env.get('OPENROUTER_API_KEY');
   const model = Deno.env.get('CLASSIFY_MODEL') ?? DEFAULT_MODEL;
 
   if (!apiKey) {
-    console.error('Set GEMINI_API_KEY before running this script.');
+    console.error('Set OPENROUTER_API_KEY before running this script.');
     Deno.exit(1);
   }
 

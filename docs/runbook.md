@@ -30,10 +30,16 @@ where jobid = (select jobid from cron.job where jobname ilike '%classif%')
 order by start_time desc limit 20;
 ```
 
-Check `/health`'s `gemini` check — `down` here (wrong/expired key,
-Gemini API outage, or rate limiting) is the most common root cause, since
-every job fails the same way until it's fixed. Also check individual
-`dead_letter` jobs' `last_error` for a pattern:
+Check `/health`'s `openrouter` check — `down` here (wrong/expired key or
+an OpenRouter outage) is the most common root cause, since
+every job fails the same way until it's fixed. Note that this only
+validates the key/account, not the specific free model configured in
+`classification_settings.model_name` — that model runs on OpenRouter's
+shared free-tier pool, so a healthy `openrouter` check plus a run of
+`dead_letter` jobs with a "rate-limited upstream" `last_error` means the
+*model* is temporarily unavailable, not the account; the existing
+attempts/backoff usually clears this on its own within a few retries.
+Also check individual `dead_letter` jobs' `last_error` for a pattern:
 
 ```sql
 select id, document_id, attempts, last_error
@@ -44,8 +50,8 @@ order by processed_at desc limit 20;
 
 **Fix:**
 
-- If it's the Gemini key: see "Rotating the Gemini key" below, then
-  confirm `/health` reports `gemini: ok`.
+- If it's the OpenRouter key: see "Rotating the OpenRouter key" below, then
+  confirm `/health` reports `openrouter: ok`.
 - Once the root cause is fixed, requeue affected jobs — deliberately by
   id after reviewing `last_error`, not a blanket requeue (a `dead_letter`
   job might be dead-lettered because the file itself is bad, which
@@ -205,18 +211,18 @@ entries carry the filename in `payload` and can help locate it.)
    and if restores become routine rather than exceptional, that's worth a
    small migration adding the event type, not a permanent gap.
 
-## Rotating the Gemini key
+## Rotating the OpenRouter key
 
-1. Create a new key in [Google AI Studio](https://aistudio.google.com/apikey) — **don't revoke the old one yet.**
-2. Set it on the project (per environment — this does not need a redeploy; every Edge Function reads `GEMINI_API_KEY` fresh from the environment on each invocation, not at deploy time):
+1. Create a new key at [openrouter.ai/keys](https://openrouter.ai/keys) — **don't revoke the old one yet.**
+2. Set it on the project (per environment — this does not need a redeploy; every Edge Function reads `OPENROUTER_API_KEY` fresh from the environment on each invocation, not at deploy time):
    ```bash
    supabase link --project-ref <staging-or-production-ref>
-   supabase secrets set GEMINI_API_KEY=...
+   supabase secrets set OPENROUTER_API_KEY=...
    ```
-3. Confirm it works: `GET .../functions/v1/health` and check `checks.gemini.status` is `"ok"`.
+3. Confirm it works: `GET .../functions/v1/health` and check `checks.openrouter.status` is `"ok"`.
 4. Watch Sentry / the `classify-document` function logs for a few minutes to confirm real classification jobs are succeeding, not just the lightweight health check.
-5. Once confident (a reasonable bar: 24 hours with no auth-related errors), revoke the old key in Google AI Studio.
-6. **If something breaks right after rotation:** set `GEMINI_API_KEY` back to the old value with the same `supabase secrets set` command — instant, no deploy, no rollback procedure needed beyond that, since the old key is still valid until you complete step 5.
+5. Once confident (a reasonable bar: 24 hours with no auth-related errors), revoke the old key at openrouter.ai/keys.
+6. **If something breaks right after rotation:** set `OPENROUTER_API_KEY` back to the old value with the same `supabase secrets set` command — instant, no deploy, no rollback procedure needed beyond that, since the old key is still valid until you complete step 5.
 
 Do the same for `RESEND_API_KEY` when that needs rotating — identical
 procedure, different secret name, and `EMAIL_FROM`/`RESEND_WEBHOOK_SECRET`

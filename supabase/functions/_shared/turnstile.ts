@@ -1,5 +1,5 @@
 // Cloudflare Turnstile server-side verification. Optional infrastructure,
-// same pattern as GEMINI_API_KEY/SENTRY_DSN elsewhere in this app: with
+// same pattern as OPENROUTER_API_KEY/SENTRY_DSN elsewhere in this app: with
 // no TURNSTILE_SECRET_KEY configured, this no-ops (returns valid: true)
 // rather than blocking signup before a Turnstile site actually exists —
 // there is no free-tier cost or account requirement blocking turning it
