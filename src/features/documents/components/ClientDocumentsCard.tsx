@@ -17,10 +17,62 @@ import {
 import { getConfidenceLabel } from '@/features/requests/lib/reviewFormatting';
 import { useClientDocuments } from '../hooks/useClientDocuments';
 import { useTriggerClassification } from '../hooks/useTriggerClassification';
+import type { ClientDocument } from '../types';
 
 const CONFIDENCE_BADGE_VARIANT = { High: 'success', Medium: 'warning', Low: 'danger' } as const;
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = 20; // ~1 minute — long enough for the near-instant trigger path, short enough not to poll forever if a job dead-letters.
+
+// Fixed categories, matching AI_DOCUMENT_TYPES in
+// supabase/functions/_shared/classifier.ts — grouping by this rather than
+// by ai_classification.document_type_label, since that label is free text
+// the model writes per document ("short human label" in the system
+// prompt), not a canonical value; grouping by it would split what should
+// be one "Bank Statements" section into several near-duplicate ones over
+// slightly different wording.
+const TYPE_LABELS: Record<string, string> = {
+  bank_statement: 'Bank Statements',
+  sales_invoice: 'Sales Invoices',
+  purchase_invoice: 'Purchase Invoices',
+  payroll_report: 'Payroll Reports',
+  expense_receipt: 'Expense Receipts',
+  credit_card_statement: 'Credit Card Statements',
+  tax_return: 'Tax Returns',
+  other: 'Other',
+  unreadable: 'Unreadable',
+};
+const TYPE_ORDER = Object.keys(TYPE_LABELS);
+
+interface DocumentGroup {
+  key: string;
+  label: string;
+  documents: ClientDocument[];
+}
+
+function groupByType(documents: ClientDocument[]): { unclassified: ClientDocument[]; groups: DocumentGroup[] } {
+  const unclassified: ClientDocument[] = [];
+  const byType = new Map<string, ClientDocument[]>();
+
+  for (const doc of documents) {
+    if (!doc.ai_classification) {
+      unclassified.push(doc);
+      continue;
+    }
+    const key = doc.ai_classification.document_type;
+    if (!byType.has(key)) byType.set(key, []);
+    byType.get(key)!.push(doc);
+  }
+
+  const orderedKeys = [
+    ...TYPE_ORDER.filter((key) => byType.has(key)),
+    ...[...byType.keys()].filter((key) => !TYPE_ORDER.includes(key)),
+  ];
+
+  return {
+    unclassified,
+    groups: orderedKeys.map((key) => ({ key, label: TYPE_LABELS[key] ?? key, documents: byType.get(key)! })),
+  };
+}
 
 export function ClientDocumentsCard({
   clientId,
@@ -60,9 +112,9 @@ export function ClientDocumentsCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentsQuery.data]);
 
-  const classifiableIds = (documentsQuery.data ?? [])
-    .filter((doc) => !doc.ai_classification && !processingIds.has(doc.id))
-    .map((doc) => doc.id);
+  const documents = documentsQuery.data ?? [];
+  const classifiableIds = documents.filter((doc) => !doc.ai_classification && !processingIds.has(doc.id)).map((doc) => doc.id);
+  const { unclassified, groups } = groupByType(documents);
 
   function handleClassify(documentId: string) {
     setProcessingIds((prev) => new Set(prev).add(documentId));
@@ -79,6 +131,54 @@ export function ClientDocumentsCard({
     triggerMutation.mutate(classifiableIds.map((documentId) => ({ organizationId, documentId })));
   }
 
+  function renderRow(doc: ClientDocument, showAction: boolean) {
+    const isProcessing = processingIds.has(doc.id);
+    const confidenceLabel = getConfidenceLabel(doc.ai_confidence);
+
+    return (
+      <TableRow key={doc.id}>
+        <TableCell>{doc.original_filename}</TableCell>
+        <TableCell>{doc.period_label ?? '—'}</TableCell>
+        <TableCell>{new Date(doc.uploaded_at).toLocaleDateString()}</TableCell>
+        <TableCell>
+          {doc.ai_classification && confidenceLabel ? (
+            <Badge variant={CONFIDENCE_BADGE_VARIANT[confidenceLabel]}>{confidenceLabel} confidence</Badge>
+          ) : isProcessing ? (
+            <Badge variant="accent">Processing…</Badge>
+          ) : (
+            <Badge variant="neutral">Not classified</Badge>
+          )}
+        </TableCell>
+        {showAction && (
+          <TableCell>
+            {!doc.ai_classification && !isProcessing && (
+              <Button variant="ghost" size="sm" onClick={() => handleClassify(doc.id)}>
+                Classify
+              </Button>
+            )}
+          </TableCell>
+        )}
+      </TableRow>
+    );
+  }
+
+  function renderGroupTable(rows: ClientDocument[], showAction: boolean) {
+    return (
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Filename</TableHead>
+            <TableHead>Request</TableHead>
+            <TableHead>Uploaded</TableHead>
+            <TableHead>Confidence</TableHead>
+            {showAction && <TableHead>&nbsp;</TableHead>}
+          </TableRow>
+        </TableHeader>
+        <TableBody>{rows.map((doc) => renderRow(doc, showAction))}</TableBody>
+      </Table>
+    );
+  }
+
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
@@ -92,73 +192,35 @@ export function ClientDocumentsCard({
           Classify all
         </Button>
       </CardHeader>
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Filename</TableHead>
-              <TableHead>Request</TableHead>
-              <TableHead>Uploaded</TableHead>
-              <TableHead>Classification</TableHead>
-              <TableHead>&nbsp;</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {documentsQuery.isPending ? (
-              Array.from({ length: 3 }).map((_, rowIndex) => (
-                <TableRow key={rowIndex}>
-                  {Array.from({ length: 5 }).map((__, cellIndex) => (
-                    <TableCell key={cellIndex}>
-                      <Skeleton className="h-4 w-full" />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : documentsQuery.data?.length ? (
-              documentsQuery.data.map((doc) => {
-                const isProcessing = processingIds.has(doc.id);
-                const confidenceLabel = getConfidenceLabel(doc.ai_confidence);
-
-                return (
-                  <TableRow key={doc.id}>
-                    <TableCell>{doc.original_filename}</TableCell>
-                    <TableCell>{doc.period_label ?? '—'}</TableCell>
-                    <TableCell>{new Date(doc.uploaded_at).toLocaleDateString()}</TableCell>
-                    <TableCell>
-                      {doc.ai_classification ? (
-                        <div className="flex items-center gap-2">
-                          <span>{doc.ai_classification.document_type_label}</span>
-                          {confidenceLabel && (
-                            <Badge variant={CONFIDENCE_BADGE_VARIANT[confidenceLabel]}>
-                              {confidenceLabel} confidence
-                            </Badge>
-                          )}
-                        </div>
-                      ) : isProcessing ? (
-                        <Badge variant="accent">Processing…</Badge>
-                      ) : (
-                        <Badge variant="neutral">Not classified</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {!doc.ai_classification && !isProcessing && (
-                        <Button variant="ghost" size="sm" onClick={() => handleClassify(doc.id)}>
-                          Classify
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            ) : (
-              <TableRow>
-                <TableCell colSpan={5} className="py-10 text-center text-neutral-400">
-                  No documents yet.
-                </TableCell>
-              </TableRow>
+      <CardContent className="space-y-6">
+        {documentsQuery.isPending ? (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, rowIndex) => (
+              <Skeleton key={rowIndex} className="h-8 w-full" />
+            ))}
+          </div>
+        ) : documents.length === 0 ? (
+          <p className="py-6 text-center text-sm text-neutral-400">No documents yet.</p>
+        ) : (
+          <>
+            {unclassified.length > 0 && (
+              <div>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  Unclassified ({unclassified.length})
+                </h4>
+                {renderGroupTable(unclassified, true)}
+              </div>
             )}
-          </TableBody>
-        </Table>
+            {groups.map((group) => (
+              <div key={group.key}>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  {group.label} ({group.documents.length})
+                </h4>
+                {renderGroupTable(group.documents, false)}
+              </div>
+            ))}
+          </>
+        )}
       </CardContent>
     </Card>
   );
