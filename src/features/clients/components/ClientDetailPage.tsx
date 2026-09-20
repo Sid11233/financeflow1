@@ -19,6 +19,7 @@ import {
 import { getStatusBucket, statusBadgeConfig } from '@/lib/requestStatus';
 import { NewRequestDialog } from '@/features/requests/components/NewRequestDialog';
 import { ActivityFeed } from '@/features/activity/components/ActivityFeed';
+import { ClientDocumentsCard } from '@/features/documents/components/ClientDocumentsCard';
 import { useClient } from '../hooks/useClient';
 import { useClientRequestHistory } from '../hooks/useClientRequestHistory';
 
@@ -152,6 +153,8 @@ export function ClientDetailPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <ClientDocumentsCard clientId={client.id} organizationId={client.organization_id} />
 
       <Card>
         <CardHeader>
